@@ -1,0 +1,34 @@
+[Unit]
+Description=Validator Application Service
+After=multi-user.target systemd-user-sessions.service
+Wants=display-manager.service
+
+[Service]
+Type=simple
+User=user
+WorkingDirectory=/home/user/validator/src
+StandardInput=tty
+StandardOutput=tty
+TTYPath=/dev/tty0
+TTYVHangup=yes
+TTYReset=yes
+
+# SDL/Pygame configuration
+Environment="VALIDATOR_LINE_NAME=L1"
+Environment="VALIDATOR_API_URL=http://192.168.1.225:8000"
+Environment="VALIDATOR_NFC_PORT=tty:USB0:pn532"
+
+# Run the script in virtual environment
+ExecStart=/bin/python3 /home/user/validator/src/validator.py
+
+# Restart policy
+Restart=always
+RestartSec=10
+StartLimitInterval=60
+StartLimitBurst=3
+
+# Permissions
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
