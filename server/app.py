@@ -148,15 +148,27 @@ def scan_card_info():
             card_data = doc.to_dict()
             current_status = card_data.get("status", "OK")
             current_credits = card_data.get("credits", 0)
+            expiration_date = card_data.get("expiration_date", "")
             
-            # Credit Logic
+            # Expiration Check
+            if expiration_date and current_status == "VALID":
+                try:
+                    exp_date = datetime.strptime(expiration_date, "%Y-%m-%d").date()
+                    if exp_date < datetime.now().date():
+                        current_status = "EXPIRED"
+                        doc_ref.update({"status": "EXPIRED"})
+                        print(f"Card expired on {expiration_date}")
+                except ValueError:
+                    print(f"Invalid expiration date format: {expiration_date}")
+            
+            # Credit Logic (only if still VALID after expiration check)
             if current_status == "VALID":
                 if current_credits > 0:
                     current_credits -= 1
                     doc_ref.update({"credits": current_credits})
                     print(f"Deducted 1 credit. Remaining: {current_credits}")
                 else:
-                    current_status = "INVALID" # Or 'NO_CREDITS' maybe? Keeping INVALID for now.
+                    current_status = "INVALID"
                     doc_ref.update({"status": "INVALID"})
                     print(f"Insufficient credits. Card invalidated.")
             
@@ -209,6 +221,18 @@ def update_card_status(card_uid):
         
         if not doc.exists:
             return jsonify({"error": "Card not found"}), 404
+        
+        # Check if trying to validate an expired card
+        if new_status == "VALID":
+            card_data = doc.to_dict()
+            expiration_date = card_data.get("expiration_date", "")
+            if expiration_date:
+                try:
+                    exp_date = datetime.strptime(expiration_date, "%Y-%m-%d").date()
+                    if exp_date < datetime.now().date():
+                        return jsonify({"error": "Cannot validate expired card. Update expiration date first."}), 400
+                except ValueError:
+                    pass
             
         doc_ref.update({"status": new_status})
         
@@ -217,6 +241,41 @@ def update_card_status(card_uid):
         
     except Exception as e:
         print(f"Error in update_card_status: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/validator/cards/<card_uid>/expiration", methods=["POST"])
+def update_card_expiration(card_uid):
+    """
+    Update card expiration date endpoint
+    
+    Expected request body:
+    {
+        "expiration_date": "2027-12-31"
+    }
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Missing request body"}), 400
+            
+        expiration_date = data.get("expiration_date")
+        if not expiration_date:
+            return jsonify({"error": "Missing expiration_date"}), 400
+            
+        card_uid_upper = card_uid.upper()
+        doc_ref = db.collection("cards").document(card_uid_upper)
+        
+        if not doc_ref.get().exists:
+            return jsonify({"error": "Card not found"}), 404
+            
+        doc_ref.update({"expiration_date": expiration_date})
+        
+        print(f"Updated card {card_uid_upper} expiration to {expiration_date}")
+        return jsonify({"status": "OK", "expiration_date": expiration_date}), 200
+        
+    except Exception as e:
+        print(f"Error in update_card_expiration: {e}")
         return jsonify({"error": str(e)}), 500
 
 
@@ -284,6 +343,71 @@ def top_up_card(card_uid):
         
     except Exception as e:
         print(f"Error in top_up_card: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/validator/cards", methods=["POST"])
+def create_card():
+    """
+    Create a new card endpoint
+    
+    Expected request body:
+    {
+        "uid": "ABC12345",
+        "credits": 100,
+        "expiration_date": "2027-12-31"
+    }
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Missing request body"}), 400
+            
+        uid = data.get("uid")
+        if not uid:
+            return jsonify({"error": "Missing uid"}), 400
+            
+        uid_upper = uid.upper()
+        credits = data.get("credits", 0)
+        expiration_date = data.get("expiration_date", "")
+        
+        # Check if card already exists
+        doc_ref = db.collection("cards").document(uid_upper)
+        if doc_ref.get().exists:
+            return jsonify({"error": "Card already exists"}), 409
+        
+        # Create the card
+        doc_ref.set({
+            "status": "VALID",
+            "credits": credits,
+            "expiration_date": expiration_date
+        })
+        
+        print(f"Created new card: {uid_upper}")
+        return jsonify({"status": "OK", "uid": uid_upper}), 201
+        
+    except Exception as e:
+        print(f"Error in create_card: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/validator/cards/<card_uid>", methods=["DELETE"])
+def delete_card(card_uid):
+    """Delete a card endpoint"""
+    try:
+        card_uid_upper = card_uid.upper()
+        doc_ref = db.collection("cards").document(card_uid_upper)
+        
+        if not doc_ref.get().exists:
+            return jsonify({"error": "Card not found"}), 404
+            
+        doc_ref.delete()
+        
+        print(f"Deleted card: {card_uid_upper}")
+        return jsonify({"status": "OK"}), 200
+        
+    except Exception as e:
+        print(f"Error in delete_card: {e}")
         return jsonify({"error": str(e)}), 500
 
 
