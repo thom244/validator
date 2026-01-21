@@ -259,6 +259,7 @@
             <h2>➕ Add New Card</h2>
             <div class="form-row">
                 <input type="text" id="new-uid" placeholder="Card UID (e.g., ABC12345)">
+                <input type="text" id="new-name" placeholder="Card Holder Name">
                 <input type="number" id="new-credits" placeholder="Credits" value="100">
                 <input type="date" id="new-expiry">
                 <button class="btn-add" onclick="addCard()">Add Card</button>
@@ -301,10 +302,13 @@
                 const response = await fetch(`${API_URL}/cards`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ uid, credits, expiration_date: expiry })
+                    body: JSON.stringify({ uid, credits, expiration_date: expiry, name: document.getElementById('new-name').value.trim() })
                 });
                 if (response.ok) {
                     document.getElementById('new-uid').value = '';
+                    document.getElementById('new-name').value = '';
+                    document.getElementById('new-credits').value = '100';
+                    document.getElementById('new-expiry').value = '';
                     fetchCards();
                 } else {
                     const err = await response.json();
@@ -388,6 +392,10 @@
                         Expires: ${card.expiration_date || 'N/A'}
                         <button class="edit-btn" onclick="editExpiration('${card.uid}', '${card.expiration_date || ''}')">✏️</button>
                     </div>
+                    <div class="card-info">
+                        Name: ${card.name || 'N/A'}
+                        <button class="edit-btn" onclick="editName('${card.uid}', '${(card.name || '').replace(/'/g, "\\'")}')">✏️</button>
+                    </div>
                     <div class="actions">
                         <button class="btn-topup" onclick="topUp('${card.uid}')">💳 Top Up</button>
                         ${isValid
@@ -407,8 +415,22 @@
 
         function filterCards() {
             const search = document.getElementById('search-uid').value.toUpperCase();
-            const filtered = allCards.filter(card => card.uid.toUpperCase().includes(search));
+            const filtered = allCards.filter(card => card.uid.toUpperCase().includes(search) || (card.name || '').toUpperCase().includes(search));
             renderCards(filtered, true);
+        }
+
+        async function editName(uid, currentName) {
+            const newName = prompt("Enter new name:", currentName || '');
+            if (newName === null) return;
+            try {
+                const response = await fetch(`${API_URL}/cards/${uid}/name`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: newName })
+                });
+                if (response.ok) fetchCards();
+                else alert('Error updating name.');
+            } catch (error) { alert('Connection error.'); }
         }
     </script>
 </body>

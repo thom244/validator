@@ -149,6 +149,8 @@ def scan_card_info():
             current_status = card_data.get("status", "OK")
             current_credits = card_data.get("credits", 0)
             expiration_date = card_data.get("expiration_date", "")
+            card_name = card_data.get("name", "")
+            last_scan = card_data.get("last_scan", "")
             
             # Expiration Check
             if expiration_date and current_status == "VALID":
@@ -161,11 +163,27 @@ def scan_card_info():
                 except ValueError:
                     print(f"Invalid expiration date format: {expiration_date}")
             
-            # Credit Logic (only if still VALID after expiration check)
-            if current_status == "VALID":
+            # 1-hour Cooldown Check
+            should_deduct = True
+            if last_scan and current_status == "VALID":
+                try:
+                    last_scan_time = datetime.fromisoformat(last_scan)
+                    time_diff = datetime.now() - last_scan_time
+                    if time_diff.total_seconds() < 3600:  # 1 hour = 3600 seconds
+                        should_deduct = False
+                        remaining_mins = int((3600 - time_diff.total_seconds()) / 60)
+                        print(f"Cooldown active. {remaining_mins} minutes remaining.")
+                except ValueError:
+                    pass
+            
+            # Credit Logic (only if VALID and not in cooldown)
+            if current_status == "VALID" and should_deduct:
                 if current_credits > 0:
                     current_credits -= 1
-                    doc_ref.update({"credits": current_credits})
+                    doc_ref.update({
+                        "credits": current_credits,
+                        "last_scan": datetime.now().isoformat()
+                    })
                     print(f"Deducted 1 credit. Remaining: {current_credits}")
                 else:
                     current_status = "INVALID"
@@ -176,6 +194,7 @@ def scan_card_info():
                 "status": current_status,
                 "credits": current_credits,
                 "expiration_date": card_data.get("expiration_date"),
+                "name": card_name,
             }
             print(f"Card found: {card_uid_upper} - {response}")
             return jsonify(response), 200
@@ -279,6 +298,39 @@ def update_card_expiration(card_uid):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/validator/cards/<card_uid>/name", methods=["POST"])
+def update_card_name(card_uid):
+    """
+    Update card name endpoint
+    
+    Expected request body:
+    {
+        "name": "John Doe"
+    }
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Missing request body"}), 400
+            
+        name = data.get("name", "")
+            
+        card_uid_upper = card_uid.upper()
+        doc_ref = db.collection("cards").document(card_uid_upper)
+        
+        if not doc_ref.get().exists:
+            return jsonify({"error": "Card not found"}), 404
+            
+        doc_ref.update({"name": name})
+        
+        print(f"Updated card {card_uid_upper} name to {name}")
+        return jsonify({"status": "OK", "name": name}), 200
+        
+    except Exception as e:
+        print(f"Error in update_card_name: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/validator/cards", methods=["GET"])
 def get_all_cards():
     """List all cards endpoint"""
@@ -370,6 +422,19 @@ def create_card():
         uid_upper = uid.upper()
         credits = data.get("credits", 0)
         expiration_date = data.get("expiration_date", "")
+        name = data.get("name", "")
+        
+        # Validation
+        if credits < 0:
+            return jsonify({"error": "Credits cannot be negative"}), 400
+        
+        if expiration_date:
+            try:
+                exp_date = datetime.strptime(expiration_date, "%Y-%m-%d").date()
+                if exp_date < datetime.now().date():
+                    return jsonify({"error": "Expiration date cannot be in the past"}), 400
+            except ValueError:
+                return jsonify({"error": "Invalid date format. Use YYYY-MM-DD"}), 400
         
         # Check if card already exists
         doc_ref = db.collection("cards").document(uid_upper)
@@ -380,7 +445,8 @@ def create_card():
         doc_ref.set({
             "status": "VALID",
             "credits": credits,
-            "expiration_date": expiration_date
+            "expiration_date": expiration_date,
+            "name": name
         })
         
         print(f"Created new card: {uid_upper}")
