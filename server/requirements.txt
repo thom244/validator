@@ -1,1 +1,3 @@
 Flask>=2.3.0
+firebase-admin
+flask-cors

@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Card Validator Dashboard</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f6f8;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+
+        .card-item {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: transform 0.2s;
+        }
+
+        .card-item:hover {
+            transform: translateY(-5px);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .card-uid {
+            font-weight: bold;
+            font-size: 1.2em;
+        }
+
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            color: white;
+        }
+
+        .status-VALID {
+            background-color: #28a745;
+        }
+
+        .status-INVALID {
+            background-color: #dc3545;
+        }
+
+        .status-EXPIRED {
+            background-color: #ffc107;
+            color: #333;
+        }
+
+        .card-info {
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .credits-val {
+            font-size: 1.5em;
+            color: #007bff;
+            font-weight: bold;
+        }
+
+        .actions {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+        }
+
+        button {
+            padding: 8px 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            flex: 1;
+        }
+
+        .btn-topup {
+            background-color: #007bff;
+            color: white;
+        }
+
+        .btn-topup:hover {
+            background-color: #0056b3;
+        }
+
+        .btn-validate {
+            background-color: #28a745;
+            color: white;
+        }
+
+        .btn-validate:hover {
+            background-color: #1e7e34;
+        }
+
+        .btn-invalidate {
+            background-color: #dc3545;
+            color: white;
+        }
+
+        .btn-invalidate:hover {
+            background-color: #bd2130;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Admin Dashboard</h1>
+        <div id="cards-container" class="card-grid">
+            <!-- Cards will be loaded here -->
+            <p style="text-align:center; width:100%">Loading cards...</p>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8000/validator';
+
+        async function fetchCards() {
+            try {
+                const response = await fetch(`${API_URL}/cards`);
+                const data = await response.json();
+                renderCards(data.cards);
+            } catch (error) {
+                console.error('Error fetching cards:', error);
+                document.getElementById('cards-container').innerHTML = '<p>Error loading cards. Is the server running?</p>';
+            }
+        }
+
+        async function topUp(uid) {
+            const amount = prompt("Enter amount to add (e.g., 10):", "10");
+            if (!amount) return;
+
+            try {
+                const response = await fetch(`${API_URL}/cards/${uid}/topup`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ amount: parseInt(amount) })
+                });
+
+                if (response.ok) {
+                    alert('Top up successful!');
+                    fetchCards(); // Refresh
+                } else {
+                    alert('Error topping up card.');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Connection error.');
+            }
+        }
+
+        async function setStatus(uid, status) {
+            try {
+                const response = await fetch(`${API_URL}/cards/${uid}/status`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer admin'
+                    },
+                    body: JSON.stringify({ status: status })
+                });
+
+                if (response.ok) {
+                    alert(`Card ${status === 'VALID' ? 'validated' : 'invalidated'}!`);
+                    fetchCards(); // Refresh
+                } else {
+                    alert('Error updating card status.');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Connection error.');
+            }
+        }
+
+        function renderCards(cards) {
+            const container = document.getElementById('cards-container');
+            container.innerHTML = '';
+
+            cards.forEach(card => {
+                const statusClass = `status-${card.status}`;
+                const isValid = card.status === 'VALID';
+
+                const cardEl = document.createElement('div');
+                cardEl.className = 'card-item';
+                cardEl.innerHTML = `
+                    <div class="card-header">
+                        <span class="card-uid">${card.uid}</span>
+                        <span class="status-badge ${statusClass}">${card.status}</span>
+                    </div>
+                    <div class="card-info">Credits: <span class="credits-val">${card.credits}</span></div>
+                    <div class="card-info">Expires: ${card.expiration_date || 'N/A'}</div>
+                    <div class="actions">
+                        <button class="btn-topup" onclick="topUp('${card.uid}')">Top Up</button>
+                        ${isValid
+                        ? `<button class="btn-invalidate" onclick="setStatus('${card.uid}', 'INVALID')">Invalidate</button>`
+                        : `<button class="btn-validate" onclick="setStatus('${card.uid}', 'VALID')">Validate</button>`
+                    }
+                    </div>
+                `;
+                container.appendChild(cardEl);
+            });
+        }
+
+        // Initial load
+        fetchCards();
+    </script>
+</body>
+
+</html>
